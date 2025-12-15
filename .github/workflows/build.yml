@@ -1,0 +1,210 @@
+name: Build
+
+# GitHub Actions workflow to build the batocera-ports solution
+on:
+  push:
+    branches: [ main, master, lr-scummvm-squashfs ]
+  pull_request:
+    branches: [ main, master, lr-scummvm-squashfs ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2019
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.1
+      
+    - name: Check build environment
+      shell: cmd
+      run: |
+        echo "=== MSBuild Version ==="
+        msbuild /version
+        echo "=== MSBuild Path ==="
+        where msbuild
+        echo "=== .NET Framework 4.0 Reference Assemblies ==="
+        if exist "%ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0" (
+          echo "Found at: %ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0"
+          dir "%ProgramFiles(x86)%\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0" | findstr /i "mscorlib"
+        ) else (
+          echo "Not found in standard location"
+        )
+        echo "=== Solution File Check ==="
+        if exist batocera-ports.sln (
+          echo "Solution file found"
+          type batocera-ports.sln | findstr /i "Project Configuration Platform" | more
+        ) else (
+          echo "Solution file NOT found!"
+        )
+      continue-on-error: true
+      
+    - name: Restore NuGet packages (if any)
+      shell: cmd
+      run: nuget restore batocera-ports.sln || echo "No NuGet packages to restore"
+      continue-on-error: true
+      
+    - name: Build solution (Release)
+      shell: cmd
+      run: |
+        msbuild batocera-ports.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild /v:minimal /m /fl /flp:logfile=build.log;verbosity=detailed
+      
+    - name: Show build errors
+      if: failure()
+      shell: cmd
+      run: |
+        echo "=== Build Errors Summary ==="
+        if exist build.log (
+          findstr /i /c:"error" build.log | more
+        ) else (
+          echo "Build log file not found"
+        )
+      continue-on-error: true
+      
+    - name: Show build log on failure
+      if: failure()
+      shell: cmd
+      run: |
+        echo "=== Build Log (last 500 lines) ==="
+        if exist build.log (
+          powershell -Command "Get-Content build.log -Tail 500"
+        ) else (
+          echo "Build log file not found"
+        )
+        echo "=== MSBuild Version ==="
+        msbuild /version
+      continue-on-error: true
+      
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
+        retention-days: 7
+        if-no-files-found: ignore
+      
+    - name: Copy es_features.cfg files (Debug output)
+      shell: cmd
+      run: |
+        if exist "emulatorLauncher\bin\Debug" (
+          if not exist "emulatorLauncher\bin\Debug\.emulationstation" mkdir "emulatorLauncher\bin\Debug\.emulationstation"
+          if exist ".emulationstation\es_features.cfg" copy /Y ".emulationstation\es_features.cfg" "emulatorLauncher\bin\Debug\.emulationstation\"
+          if exist ".emulationstation\es_savestates.cfg" copy /Y ".emulationstation\es_savestates.cfg" "emulatorLauncher\bin\Debug\.emulationstation\"
+        )
+      continue-on-error: true
+      
+    - name: Create artifacts directory
+      shell: cmd
+      run: mkdir artifacts
+      
+    - name: Copy build outputs
+      shell: cmd
+      run: |
+        echo "Copying all generated executables and DLLs..."
+        if exist "emulatorLauncher\bin\Release\emulatorLauncher.exe" (
+          copy "emulatorLauncher\bin\Release\emulatorLauncher.exe" artifacts\
+          echo "Copied emulatorLauncher.exe"
+        )
+        if exist "EmulatorLauncher.Common\bin\Release\EmulatorLauncher.Common.dll" (
+          copy "EmulatorLauncher.Common\bin\Release\EmulatorLauncher.Common.dll" artifacts\
+          echo "Copied EmulatorLauncher.Common.dll"
+        )
+        if exist "batocera-retroachievements-info\bin\Release\batocera-retroachievements-info.exe" (
+          copy "batocera-retroachievements-info\bin\Release\batocera-retroachievements-info.exe" artifacts\
+          echo "Copied batocera-retroachievements-info.exe"
+        )
+        if exist "batocera-systems\bin\Release\batocera-systems.exe" (
+          copy "batocera-systems\bin\Release\batocera-systems.exe" artifacts\
+          echo "Copied batocera-systems.exe"
+        )
+        if exist "batocera-store\bin\Release\batocera-store.exe" (
+          copy "batocera-store\bin\Release\batocera-store.exe" artifacts\
+          echo "Copied batocera-store.exe"
+        )
+        if exist "es-checkversion\bin\Release\es-checkversion.exe" (
+          copy "es-checkversion\bin\Release\es-checkversion.exe" artifacts\
+          echo "Copied es-checkversion.exe"
+        )
+        if exist "es-update\bin\Release\es-update.exe" (
+          copy "es-update\bin\Release\es-update.exe" artifacts\
+          echo "Copied es-update.exe"
+        )
+        if exist "mount\bin\Release\mount.exe" (
+          copy "mount\bin\Release\mount.exe" artifacts\
+          echo "Copied mount.exe"
+        )
+        if exist "batocera-install\bin\Release\batocera-install.exe" (
+          copy "batocera-install\bin\Release\batocera-install.exe" artifacts\
+          echo "Copied batocera-install.exe"
+        )
+        if exist "batocera-wifi\bin\Release\batocera-wifi.exe" (
+          copy "batocera-wifi\bin\Release\batocera-wifi.exe" artifacts\
+          echo "Copied batocera-wifi.exe"
+        )
+        if exist "batocera-info\bin\Release\batocera-info.exe" (
+          copy "batocera-info\bin\Release\batocera-info.exe" artifacts\
+          echo "Copied batocera-info.exe"
+        )
+        if exist "batocera-bluetooth\bin\Release\batocera-bluetooth.exe" (
+          copy "batocera-bluetooth\bin\Release\batocera-bluetooth.exe" artifacts\
+          echo "Copied batocera-bluetooth.exe"
+        )
+        if exist "batocera-padsinfo\bin\Release\batocera-padsinfo.exe" (
+          copy "batocera-padsinfo\bin\Release\batocera-padsinfo.exe" artifacts\
+          echo "Copied batocera-padsinfo.exe"
+        )
+        if exist "batocera-services\bin\Release\batocera-services.exe" (
+          copy "batocera-services\bin\Release\batocera-services.exe" artifacts\
+          echo "Copied batocera-services.exe"
+        )
+        rem Check x64 platform output for x64controllers
+        if exist "x64controllers\bin\x64\Release\x64controllers.exe" (
+          copy "x64controllers\bin\x64\Release\x64controllers.exe" artifacts\
+          echo "Copied x64controllers.exe (x64 platform)"
+        ) else if exist "x64controllers\bin\Release\x64controllers.exe" (
+          copy "x64controllers\bin\Release\x64controllers.exe" artifacts\
+          echo "Copied x64controllers.exe"
+        )
+        echo "Listing artifacts directory:"
+        dir artifacts
+      continue-on-error: true
+      
+    - name: Copy required DLLs and executables
+      shell: cmd
+      run: |
+        if exist "7z.exe" copy "7z.exe" artifacts\
+        if exist "7z.dll" copy "7z.dll" artifacts\
+        if exist "7za.exe" copy "7za.exe" artifacts\
+        if exist "7za.dll" copy "7za.dll" artifacts\
+        if exist "7zxa.dll" copy "7zxa.dll" artifacts\
+        if exist "Newtonsoft.Json.dll" copy "Newtonsoft.Json.dll" artifacts\
+        if exist "unzip.exe" copy "unzip.exe" artifacts\
+        if exist "unzip32.dll" copy "unzip32.dll" artifacts\
+        if exist "pdftoppm.exe" copy "pdftoppm.exe" artifacts\
+        if exist "pdfinfo.exe" copy "pdfinfo.exe" artifacts\
+        if exist "rdsquashfs.exe" copy "rdsquashfs.exe" artifacts\
+        if exist "liblzma.dll" copy "liblzma.dll" artifacts\
+        if exist "liblzo2-2.dll" copy "liblzo2-2.dll" artifacts\
+        if exist "libsquashfs.dll" copy "libsquashfs.dll" artifacts\
+        if exist "libzstd.dll" copy "libzstd.dll" artifacts\
+        if exist "System.Data.SQLite.dll" copy "System.Data.SQLite.dll" artifacts\
+        if exist "xbox-iso-vfs.exe" copy "xbox-iso-vfs.exe" artifacts\
+      continue-on-error: true
+      
+    - name: Copy configuration files
+      shell: cmd
+      run: |
+        if exist ".emulationstation\es_features.cfg" copy ".emulationstation\es_features.cfg" artifacts\
+      continue-on-error: true
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-outputs
+        path: artifacts/
+        retention-days: 30
+
