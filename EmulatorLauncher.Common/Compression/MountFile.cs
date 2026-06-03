@@ -61,10 +61,16 @@ namespace EmulatorLauncher.Common.Compression
                 FileTools.CompressDirectory(extractionpath);
             }
          
-            List<string> args = new List<string>();      
-    
+            List<string> args = new List<string>();
+
             if (Debugger.IsAttached)
                 args.Add("-debug");
+
+            if (Path.GetFileName(mountPath).Equals("mountsquashfs.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                args.Add("-log");
+                args.Add(@"""C:\RGS-RetroBat\mount_debug.log""");
+            }
 
             args.Add("-drive");
             args.Add(drive.Substring(0, 2));
