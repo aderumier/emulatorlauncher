@@ -17,6 +17,8 @@ namespace EmulatorLauncher
             DependsOnDesktopResolution = true;
         }
 
+        private string _squashfsDev_hdd0Path = null;
+
         public override System.Diagnostics.ProcessStartInfo Generate(string system, string emulator, string core, string rom, string playersControllers, ScreenResolution resolution)
         {
             SimpleLogger.Instance.Info("[Generator] Getting " + emulator + " path and executable name.");
@@ -30,9 +32,11 @@ namespace EmulatorLauncher
             if (!File.Exists(exe))
                 return null;
 
+            bool romIsSquashfs = Path.GetExtension(rom).ToLowerInvariant().Contains("squashfs");
+
             if (Path.GetExtension(rom).ToLower() != ".iso")
                 rom = this.TryUnZipGameIfNeeded(system, rom);
-            
+
             string savesPath = Path.Combine(AppConfig.GetFullPath("saves"), "ps3", "rpcs3");
             if (!Directory.Exists(savesPath))
                 savesPath = path;
@@ -45,6 +49,23 @@ namespace EmulatorLauncher
 
                     if (!File.Exists(rom))
                         throw new ApplicationException("Unable to find any game in the provided folder");
+
+                    // PSN squashfs: detect from EBOOT.BIN path structure after mount.
+                    // Directory.Exists is unreliable on Dokan virtual drives; use the found
+                    // EBOOT.BIN path which comes from Directory.GetFiles (FindFirstFile) instead.
+                    if (romIsSquashfs)
+                    {
+                        string root = Path.GetPathRoot(rom);
+                        if (!string.IsNullOrEmpty(root))
+                        {
+                            string relative = rom.Substring(root.Length);
+                            if (relative.StartsWith("dev_hdd0\\game\\", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _squashfsDev_hdd0Path = Path.Combine(root, "dev_hdd0");
+                                SimpleLogger.Instance.Info("[Generator] PSN squashfs detected, dev_hdd0 at: " + _squashfsDev_hdd0Path);
+                            }
+                        }
+                    }
                 }
 
                 else if (Path.GetExtension(rom).Equals(".m3u", StringComparison.OrdinalIgnoreCase))
@@ -276,14 +297,22 @@ namespace EmulatorLauncher
 
                 YmlFile yml = YmlFile.Load(Path.Combine(path, "config", "vfs.yml"));
 
-                string hdd0Path = Path.Combine(savesPath, "dev_hdd0");
-                if (!Directory.Exists(hdd0Path))
-                    try { Directory.CreateDirectory(hdd0Path); }
-                    catch { }
+                string hdd0Path;
+                if (_squashfsDev_hdd0Path != null)
+                {
+                    hdd0Path = _squashfsDev_hdd0Path;
+                    SimpleLogger.Instance.Info("[Generator] Setting '" + hdd0Path + "' as dev_hdd0 path for PSN squashfs game.");
+                }
+                else
+                {
+                    hdd0Path = Path.Combine(savesPath, "dev_hdd0");
+                    if (!Directory.Exists(hdd0Path))
+                        try { Directory.CreateDirectory(hdd0Path); }
+                        catch { }
+                    SimpleLogger.Instance.Info("[Generator] Setting '" + hdd0Path + "' as content path for the emulator");
+                }
 
-                yml["/dev_hdd0/"] = hdd0Path.Replace("\\", "/");
-
-                SimpleLogger.Instance.Info("[Generator] Setting '" + hdd0Path + "' as content path for the emulator");
+                yml["/dev_hdd0/"] = hdd0Path.Replace("\\", "/") + "/";
 
                 // Save to yml file
                 yml.Save();
